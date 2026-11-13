@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/VoucherEngine.Api/VoucherEngine.Api.csproj" />
+    <Project Path="src/VoucherEngine.Application/VoucherEngine.Application.csproj" />
+    <Project Path="src/VoucherEngine.Domain/VoucherEngine.Domain.csproj" />
+    <Project Path="src/VoucherEngine.Infrastructure/VoucherEngine.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/VoucherEngine.UnitTests/VoucherEngine.UnitTests.csproj" />
+  </Folder>
+</Solution>
