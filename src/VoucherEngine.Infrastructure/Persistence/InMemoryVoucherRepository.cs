@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Threading;
 using VoucherEngine.Application.Interfaces;
 using VoucherEngine.Domain.Entities;
 
@@ -9,9 +10,16 @@ public class InMemoryVoucherRepository : IVoucherRepository
     private readonly ConcurrentDictionary<string, Voucher> _vouchersByCode = new();
     private readonly ConcurrentDictionary<string, RedemptionRecord> _recordsByIdempotency = new();
     private readonly object _lock = new();
+    private long _versionCounter = 1;
 
     public void Seed(Voucher voucher)
     {
+        if (voucher.RowVersion.Length == 0)
+        {
+            long initialVersion = Interlocked.Increment(ref _versionCounter);
+            typeof(Voucher).GetProperty(nameof(Voucher.RowVersion))!
+                .SetValue(voucher, BitConverter.GetBytes(initialVersion));
+        }
         _vouchersByCode[voucher.Code] = voucher;
     }
 
@@ -35,22 +43,26 @@ public class InMemoryVoucherRepository : IVoucherRepository
     {
         lock (_lock)
         {
+            // Enforce unique IdempotencyKey inside the critical section before mutating quota
+            if (_recordsByIdempotency.ContainsKey(record.IdempotencyKey))
+            {
+                return Task.FromResult(false);
+            }
+
             var voucher = _vouchersByCode.Values.FirstOrDefault(v => v.Id == voucherId);
             if (voucher == null) return Task.FromResult(false);
 
-            // Compare RowVersion
             if (!voucher.RowVersion.SequenceEqual(expectedRowVersion))
             {
-                // Concurrency violation!
                 return Task.FromResult(false);
             }
 
             voucher.Redeem(record.OrderAmount, DateTime.UtcNow);
 
-            // Bump RowVersion
-            var newVersion = BitConverter.GetBytes(DateTime.UtcNow.Ticks);
+            // Strictly monotonic version avoids same-tick timestamp collisions under tight loops
+            long nextVersion = Interlocked.Increment(ref _versionCounter);
             typeof(Voucher).GetProperty(nameof(Voucher.RowVersion))!
-                .SetValue(voucher, newVersion);
+                .SetValue(voucher, BitConverter.GetBytes(nextVersion));
 
             _recordsByIdempotency[record.IdempotencyKey] = record;
             return Task.FromResult(true);
